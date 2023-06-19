@@ -22,6 +22,6 @@ public class AsyncClassTest {
     }
 
     public void internalTask() {
-        System.out.println("internalTask: " + Thread.currentThread().getName());
+        executor.submit(() -> System.out.println("internalTask: " + Thread.currentThread().getName()));
     }
 }
