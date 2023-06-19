@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class WelcomeClassTests {
-
     WelcomeClass welcomeClass = new WelcomeClass();
 
     @Test

@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class WelcomeClassBenchmarks {
-
     private final WelcomeClass welcomeClass = new WelcomeClass();
 
     public static void main(String[] args) throws RunnerException {
