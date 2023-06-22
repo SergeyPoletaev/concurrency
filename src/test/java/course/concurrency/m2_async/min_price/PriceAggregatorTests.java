@@ -3,7 +3,6 @@ package course.concurrency.m2_async.min_price;
 import course.concurrency.m2_async.cf.min_price.PriceAggregator;
 import course.concurrency.m2_async.cf.min_price.PriceRetriever;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +37,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("Every shop responds")
-    @Disabled
     public void shouldReturnMin() {
         int shopCount = 50;
         PriceRetriever priceRetriever = mock(PriceRetriever.class);
@@ -62,7 +60,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("No one responds")
-    @Disabled
     public void shouldReturnDefault() {
         PriceRetriever priceRetriever = mock(PriceRetriever.class);
         when(priceRetriever.getPrice(anyLong(), anyLong())).thenAnswer(inv -> {
@@ -82,7 +79,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("Half of shops respond too long")
-    @Disabled
     public void shouldTolerateLongResponses() {
         int shopCount = 50;
         int half = shopCount / 2;
@@ -117,7 +113,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("Not everyone responds")
-    @Disabled
     public void shouldReturnMinWithIncomplete() {
         int shopCount = 50;
         PriceRetriever priceRetriever = mock(PriceRetriever.class);
@@ -158,7 +153,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("Some shops respond with exception")
-    @Disabled
     public void shouldReturnMinWithException() {
         int shopCount = 50;
         PriceRetriever priceRetriever = mock(PriceRetriever.class);
@@ -198,7 +192,6 @@ public class PriceAggregatorTests {
 
     @Test
     @DisplayName("Min price from last shop")
-    @Disabled
     public void shouldReturnMinFromLast() {
         int shopCount = 50;
         double expectedMinPrice = 10d;
