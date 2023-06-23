@@ -4,7 +4,6 @@ import org.junit.platform.commons.logging.Logger;
 import org.junit.platform.commons.logging.LoggerFactory;
 
 import java.util.Collection;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
@@ -31,18 +30,16 @@ public class PriceAggregator {
         return shopIds.stream()
                 .map(shopId -> CompletableFuture
                         .supplyAsync(() -> priceRetriever.getPrice(itemId, shopId), executor)
-                        .orTimeout(2900, TimeUnit.MILLISECONDS)
+                        .completeOnTimeout(NaN, 2800, TimeUnit.MILLISECONDS)
                         .exceptionally(ex -> {
-                            if (ex.getClass() != TimeoutException.class) {
-                                LOG.error(ex, () -> "Что-то пошло не так ...");
-                            }
-                            return null;
+                            LOG.error(ex, () -> "Что-то пошло не так ...");
+                            return NaN;
                         }))
                 .collect(Collectors.toSet())
                 .stream()
-                .map(CompletableFuture::join)
-                .filter(Objects::nonNull)
-                .min(Double::compareTo)
+                .mapToDouble(CompletableFuture::join)
+                .filter(e -> !Double.isNaN(e))
+                .min()
                 .orElse(NaN);
     }
 }
