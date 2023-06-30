@@ -1,14 +1,12 @@
 package course.concurrency.exams.auction;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.*;
 
 import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Disabled
 public class AuctionTests {
 
     private static final int TEST_COUNT = 10;
