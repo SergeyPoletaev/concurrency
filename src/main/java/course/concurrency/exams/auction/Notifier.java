@@ -38,7 +38,7 @@ public class Notifier {
 
     private ExecutorService initPool() {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                30_000,
+                1_000,
                 30_000,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(4_000_000));
