@@ -12,13 +12,11 @@ public class AuctionStoppablePessimistic implements AuctionStoppable {
 
     public boolean propose(Bid bid) {
         if (isTerminated) {
-            Thread.currentThread().interrupt();
             return false;
         }
         if (bid.getPrice() > latestBid.getPrice()) {
             synchronized (this) {
                 if (isTerminated) {
-                    Thread.currentThread().interrupt();
                     return false;
                 }
                 if (bid.getPrice() > latestBid.getPrice()) {
@@ -40,5 +38,9 @@ public class AuctionStoppablePessimistic implements AuctionStoppable {
         synchronized (this) {
             return latestBid;
         }
+    }
+
+    public boolean isTerminated() {
+        return isTerminated;
     }
 }
