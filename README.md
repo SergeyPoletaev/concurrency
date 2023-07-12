@@ -1,7 +1,5 @@
 # concurrency
 
-[![build](https://github.com/SergeyPoletaev/concurrency/workflows/build/badge.svg)](https://github.com/SergeyPoletaev/concurrency/actions)
-
 ### Описание проекта:
 
 Эксперименты с многопоточностью ...
