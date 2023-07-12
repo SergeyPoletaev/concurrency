@@ -3,7 +3,6 @@ package course.concurrency.m3_shared.collections;
 import course.concurrency.exams.auction.ExecutionStatistics;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.RepeatedTest;
 
 import java.util.Set;
@@ -15,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@Disabled
 public class RestaurantServiceTests {
 
     private static final int TEST_COUNT = 10;
