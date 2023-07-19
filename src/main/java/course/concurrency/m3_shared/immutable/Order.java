@@ -20,7 +20,11 @@ public final class Order {
     }
 
     public boolean checkStatus() {
-        return items != null && !items.isEmpty() && paymentInfo != null && isPacked;
+        return items != null
+                && !items.isEmpty()
+                && paymentInfo != null
+                && isPacked
+                && status == Status.PAID_AND_PACKED;
     }
 
     public Long getId() {
@@ -44,6 +48,6 @@ public final class Order {
     }
 
     public enum Status {
-        NEW, IN_PROGRESS, DELIVERED
+        NEW, IN_PROGRESS, DELIVERED, PAID, PACKED, PAID_AND_PACKED
     }
 }

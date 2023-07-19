@@ -19,8 +19,18 @@ public class OrderService {
 
     public void updatePaymentInfo(long orderId, PaymentInfo paymentInfo) {
         Order newOrder = currentOrders.computeIfPresent(
-                orderId,
-                (k, v) -> new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.IN_PROGRESS)
+                orderId, (k, v) -> {
+                    if (v.getStatus() == Order.Status.NEW) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.PAID);
+                    }
+                    if (v.getStatus() == Order.Status.PACKED) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.PAID_AND_PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID_AND_PACKED) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.IN_PROGRESS);
+                    }
+                    return v;
+                }
         );
         if (newOrder != null && newOrder.checkStatus()) {
             deliver(newOrder);
@@ -30,7 +40,18 @@ public class OrderService {
     public void setPacked(long orderId) {
         Order newOrder = currentOrders.computeIfPresent(
                 orderId,
-                (k, v) -> new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.IN_PROGRESS)
+                (k, v) -> {
+                    if (v.getStatus() == Order.Status.NEW) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.PAID_AND_PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID_AND_PACKED) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.IN_PROGRESS);
+                    }
+                    return v;
+                }
         );
         if (newOrder != null && newOrder.checkStatus()) {
             deliver(newOrder);
