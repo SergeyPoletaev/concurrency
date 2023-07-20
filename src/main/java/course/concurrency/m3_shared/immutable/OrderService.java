@@ -1,46 +1,72 @@
 package course.concurrency.m3_shared.immutable;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class OrderService {
 
-    private Map<Long, Order> currentOrders = new HashMap<>();
-    private long nextId = 0L;
+    private final Map<Long, Order> currentOrders = new ConcurrentHashMap<>();
+    private final AtomicLong ids = new AtomicLong();
 
-    private synchronized long nextId() {
-        return nextId++;
-    }
-
-    public synchronized long createOrder(List<Item> items) {
-        long id = nextId();
-        Order order = new Order(items);
-        order.setId(id);
+    public long createOrder(List<Item> items) {
+        long id = ids.incrementAndGet();
+        Order order = new Order(id, items, null, false, Order.Status.NEW);
         currentOrders.put(id, order);
         return id;
     }
 
-    public synchronized void updatePaymentInfo(long orderId, PaymentInfo paymentInfo) {
-        currentOrders.get(orderId).setPaymentInfo(paymentInfo);
-        if (currentOrders.get(orderId).checkStatus()) {
-            deliver(currentOrders.get(orderId));
+    public void updatePaymentInfo(long orderId, PaymentInfo paymentInfo) {
+        Order newOrder = currentOrders.computeIfPresent(
+                orderId, (k, v) -> {
+                    if (v.getStatus() == Order.Status.NEW) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.PAID);
+                    }
+                    if (v.getStatus() == Order.Status.PACKED) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.PAID_AND_PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID_AND_PACKED) {
+                        return new Order(k, v.getItems(), paymentInfo, v.isPacked(), Order.Status.IN_PROGRESS);
+                    }
+                    return v;
+                }
+        );
+        if (newOrder != null && newOrder.checkStatus()) {
+            deliver(newOrder);
         }
     }
 
-    public synchronized void setPacked(long orderId) {
-        currentOrders.get(orderId).setPacked(true);
-        if (currentOrders.get(orderId).checkStatus()) {
-            deliver(currentOrders.get(orderId));
+    public void setPacked(long orderId) {
+        Order newOrder = currentOrders.computeIfPresent(
+                orderId,
+                (k, v) -> {
+                    if (v.getStatus() == Order.Status.NEW) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.PAID_AND_PACKED);
+                    }
+                    if (v.getStatus() == Order.Status.PAID_AND_PACKED) {
+                        return new Order(k, v.getItems(), v.getPaymentInfo(), true, Order.Status.IN_PROGRESS);
+                    }
+                    return v;
+                }
+        );
+        if (newOrder != null && newOrder.checkStatus()) {
+            deliver(newOrder);
         }
     }
 
-    private synchronized void deliver(Order order) {
+    private void deliver(Order order) {
         /* ... */
-        currentOrders.get(order.getId()).setStatus(Order.Status.DELIVERED);
+        currentOrders.computeIfPresent(
+                order.getId(),
+                (k, v) -> new Order(k, v.getItems(), v.getPaymentInfo(), v.isPacked(), Order.Status.DELIVERED)
+        );
     }
 
-    public synchronized boolean isDelivered(long orderId) {
+    public boolean isDelivered(long orderId) {
         return currentOrders.get(orderId).getStatus().equals(Order.Status.DELIVERED);
     }
 }
