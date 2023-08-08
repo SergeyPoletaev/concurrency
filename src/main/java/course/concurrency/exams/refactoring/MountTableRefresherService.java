@@ -1,9 +1,12 @@
 package course.concurrency.exams.refactoring;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 public class MountTableRefresherService {
@@ -81,7 +84,16 @@ public class MountTableRefresherService {
 
     private void invokeRefresh(List<Others.MountTableManager> managers) {
         ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(managers.size());
-        Map<String, Integer> results = managers.stream()
+        List<CompletableFuture<Boolean>> cfList = getCompletableFutureList(managers, executor);
+        List<Boolean> resultList = getResultList(cfList);
+        Map<String, Integer> results = getResults(managers, resultList);
+        executor.shutdown();
+        logResult(results);
+    }
+
+    private List<CompletableFuture<Boolean>> getCompletableFutureList(
+            List<Others.MountTableManager> managers, ThreadPoolExecutor executor) {
+        List<CompletableFuture<Boolean>> cfList = managers.stream()
                 .peek(manager -> {
                     ThreadFactory tf = r -> {
                         Thread t = new Thread(r, "MountTableRefresh_" + manager.getAdminAddress());
@@ -92,30 +104,52 @@ public class MountTableRefresherService {
                 })
                 .map(manager -> CompletableFuture.supplyAsync(() -> manager.refresh(), executor)
                         .completeOnTimeout(null, cacheUpdateTimeout, TimeUnit.MILLISECONDS)
-                        .handle((rsl, ex) -> {
-                            boolean res = true;
+                        .handle((res, ex) -> {
                             if (ex != null) {
-                                log("Mount table cache refresher was interrupted.");
                                 res = false;
-                            }
-                            if (rsl == null || !rsl) {
-                                log("Not all router admins updated their cache");
-                                res = false;
-                            }
-                            if (!res) {
-                                removeFromCache(manager.getAdminAddress());
+                                ex.printStackTrace();
                             }
                             return res;
                         }))
-                .collect(Collectors.toList())
-                .stream()
-                .map(CompletableFuture::join)
-                .collect(Collectors.toMap(
-                        k -> k ? "successCount" : "failureCount",
-                        v -> 1,
-                        (oldV, newV) -> oldV + 1));
-        executor.shutdown();
-        logResult(results);
+                .collect(Collectors.toList());
+        return cfList;
+    }
+
+    private List<Boolean> getResultList(List<CompletableFuture<Boolean>> cfList) {
+        List<Boolean> resultList = new ArrayList<>();
+        for (CompletableFuture<Boolean> cf : cfList) {
+            if (Thread.interrupted()) { // Clears interrupted status!
+                log("Mount table cache refresher was interrupted.");
+                break;
+            }
+            Boolean rsl = cf.join();
+            if (rsl == null) {
+                log("Not all router admins updated their cache");
+                resultList.add(rsl);
+                break;
+            }
+            resultList.add(rsl);
+        }
+        if (cfList.size() != resultList.size()) {
+            List<Boolean> secondPartRslList = IntStream.range(resultList.size(), cfList.size())
+                    .mapToObj(i -> cfList.get(i).getNow(false))
+                    .collect(Collectors.toList());
+            resultList.addAll(resultList.size(), secondPartRslList);
+        }
+        return resultList;
+    }
+
+    private Map<String, Integer> getResults(List<Others.MountTableManager> managers, List<Boolean> resultList) {
+        Map<String, Integer> results = new HashMap<>();
+        IntStream.range(0, resultList.size()).forEach(i -> {
+            Boolean e = resultList.get(i);
+            boolean k = e != null && e;
+            if (!k) {
+                removeFromCache(managers.get(i).getAdminAddress());
+            }
+            results.merge(k ? "successCount" : "failureCount", 1, (oldV, newV) -> oldV + 1);
+        });
+        return results;
     }
 
     private void logResult(Map<String, Integer> results) {
