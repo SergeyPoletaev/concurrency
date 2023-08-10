@@ -54,27 +54,13 @@ public class Others {
     public static class MountTableManager {
 
         private String address;
-        private String adminAddress;
 
         public MountTableManager(String address) {
-            if (isLocalAdmin(address)) {
-                this.address = "local";
-            } else {
-                this.address = address;
-            }
-            this.adminAddress = address;
+            this.address = address;
         }
 
         public boolean refresh() {
             return ThreadLocalRandom.current().nextBoolean();
-        }
-
-        public String getAdminAddress() {
-            return adminAddress;
-        }
-
-        private boolean isLocalAdmin(String address) {
-            return address.contains("local");
         }
     }
 }

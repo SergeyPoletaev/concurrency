@@ -1,12 +1,8 @@
 package course.concurrency.exams.refactoring;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 
 public class MountTableRefresherService {
@@ -26,6 +22,8 @@ public class MountTableRefresherService {
      */
     private ScheduledExecutorService clientCacheCleanerScheduler;
 
+    private ExecutorService taskExecutor;
+
     public void serviceInit() {
         long routerClientMaxLiveTime = 15L;
         this.cacheUpdateTimeout = 10L;
@@ -34,12 +32,24 @@ public class MountTableRefresherService {
                 .forEach(addr -> routerClientsCache.add(addr, new Others.RouterClient()));
 
         initClientCacheCleaner(routerClientMaxLiveTime);
+        initTaskExecutor();
     }
 
     public void serviceStop() {
+        taskExecutor.shutdown();
         clientCacheCleanerScheduler.shutdown();
         // remove and close all admin clients
         routerClientsCache.cleanUp();
+    }
+
+    private void initTaskExecutor() {
+        ThreadFactory tf = r -> {
+            Thread t = new Thread(r);
+            t.setDaemon(true);
+            return t;
+        };
+        taskExecutor = new ThreadPoolExecutor(100, 200, 60L,
+                TimeUnit.SECONDS, new LinkedBlockingQueue<>(200), tf);
     }
 
     private void initClientCacheCleaner(long routerClientMaxLiveTime) {
@@ -65,97 +75,75 @@ public class MountTableRefresherService {
      * Refresh mount table cache of this router as well as all other routers.
      */
     public void refresh() {
-        List<Others.MountTableManager> managers = routerStore.getCachedRecords().stream()
+        List<MountTableRefresherTask> refreshTasks = routerStore.getCachedRecords().stream()
                 .filter(rs -> rs.getAdminAddress() != null && rs.getAdminAddress().length() != 0) // this router has not enabled router admin.
-                .map(rs -> getMountTableManager(rs.getAdminAddress()))
+                .map(rs -> getRefresher(rs.getAdminAddress()))
                 .collect(Collectors.toList());
-        if (!managers.isEmpty()) {
-            invokeRefresh(managers);
+        if (!refreshTasks.isEmpty()) {
+            invokeRefresh(refreshTasks);
         }
     }
 
-    protected Others.MountTableManager getMountTableManager(String adminAddress) {
-        return new Others.MountTableManager(adminAddress);
+    protected MountTableRefresherTask getRefresher(String adminAddress) {
+        if (isLocalAdmin(adminAddress)) {
+            /*
+             * Local router's cache update does not require RPC call, so no need for
+             * RouterClient
+             */
+            return getLocalRefresher(adminAddress);
+        } else {
+            return new MountTableRefresherTask(new Others.MountTableManager(adminAddress), adminAddress);
+        }
+    }
+
+    protected MountTableRefresherTask getLocalRefresher(String adminAddress) {
+        return new MountTableRefresherTask(new Others.MountTableManager("local"), adminAddress);
     }
 
     private void removeFromCache(String adminAddress) {
         routerClientsCache.invalidate(adminAddress);
     }
 
-    private void invokeRefresh(List<Others.MountTableManager> managers) {
-        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(managers.size());
-        List<CompletableFuture<Boolean>> cfList = getCompletableFutureList(managers, executor);
-        List<Boolean> resultList = getResultList(cfList);
-        Map<String, Integer> results = getResults(managers, resultList);
-        executor.shutdown();
-        logResult(results);
-    }
-
-    private List<CompletableFuture<Boolean>> getCompletableFutureList(
-            List<Others.MountTableManager> managers, ThreadPoolExecutor executor) {
-        List<CompletableFuture<Boolean>> cfList = managers.stream()
-                .peek(manager -> {
-                    ThreadFactory tf = r -> {
-                        Thread t = new Thread(r, "MountTableRefresh_" + manager.getAdminAddress());
-                        t.setDaemon(true);
-                        return t;
-                    };
-                    executor.setThreadFactory(tf);
+    private void invokeRefresh(List<MountTableRefresherTask> refreshTasks) {
+        /*
+         * Wait for all the thread to complete, await method returns false if
+         * refresh is not finished within specified time
+         */
+        CompletableFuture
+                .allOf(refreshTasks.stream()
+                        .map(task -> CompletableFuture.runAsync(task, taskExecutor)
+                                .exceptionally(ex -> {
+                                    ex.printStackTrace();
+                                    return null;
+                                })).toArray(CompletableFuture[]::new))
+                .orTimeout(cacheUpdateTimeout, TimeUnit.MILLISECONDS)
+                .exceptionally(ex -> {
+                    log("Not all router admins updated their cache");
+                    return null;
                 })
-                .map(manager -> CompletableFuture.supplyAsync(() -> manager.refresh(), executor)
-                        .completeOnTimeout(null, cacheUpdateTimeout, TimeUnit.MILLISECONDS)
-                        .handle((res, ex) -> {
-                            if (ex != null) {
-                                res = false;
-                                ex.printStackTrace();
-                            }
-                            return res;
-                        }))
-                .collect(Collectors.toList());
-        return cfList;
+                .join();
+        logResult(refreshTasks);
     }
 
-    private List<Boolean> getResultList(List<CompletableFuture<Boolean>> cfList) {
-        List<Boolean> resultList = new ArrayList<>();
-        for (CompletableFuture<Boolean> cf : cfList) {
-            if (Thread.interrupted()) { // Clears interrupted status!
-                log("Mount table cache refresher was interrupted.");
-                break;
+    private boolean isLocalAdmin(String adminAddress) {
+        return adminAddress.contains("local");
+    }
+
+    private void logResult(List<MountTableRefresherTask> refresherTasks) {
+        int successCount = 0;
+        int failureCount = 0;
+        for (MountTableRefresherTask mountTableRefreshTask : refresherTasks) {
+            if (mountTableRefreshTask.isSuccess()) {
+                successCount++;
+            } else {
+                failureCount++;
+                // remove RouterClient from cache so that new client is created
+                removeFromCache(mountTableRefreshTask.getAdminAddress());
             }
-            Boolean rsl = cf.join();
-            if (rsl == null) {
-                log("Not all router admins updated their cache");
-                resultList.add(rsl);
-                break;
-            }
-            resultList.add(rsl);
         }
-        if (cfList.size() != resultList.size()) {
-            List<Boolean> secondPartRslList = IntStream.range(resultList.size(), cfList.size())
-                    .mapToObj(i -> cfList.get(i).getNow(false))
-                    .collect(Collectors.toList());
-            resultList.addAll(resultList.size(), secondPartRslList);
-        }
-        return resultList;
-    }
-
-    private Map<String, Integer> getResults(List<Others.MountTableManager> managers, List<Boolean> resultList) {
-        Map<String, Integer> results = new HashMap<>();
-        IntStream.range(0, resultList.size()).forEach(i -> {
-            Boolean e = resultList.get(i);
-            boolean k = e != null && e;
-            if (!k) {
-                removeFromCache(managers.get(i).getAdminAddress());
-            }
-            results.merge(k ? "successCount" : "failureCount", 1, (oldV, newV) -> oldV + 1);
-        });
-        return results;
-    }
-
-    private void logResult(Map<String, Integer> results) {
         log(String.format(
                 "Mount table entries cache refresh successCount=%d,failureCount=%d",
-                results.getOrDefault("successCount", 0), results.getOrDefault("failureCount", 0)));
+                successCount, failureCount));
     }
 
     public void log(String message) {
@@ -172,5 +160,9 @@ public class MountTableRefresherService {
 
     public void setRouterStore(Others.RouterStore routerStore) {
         this.routerStore = routerStore;
+    }
+
+    public void setTaskExecutor(ExecutorService taskExecutor) {
+        this.taskExecutor = taskExecutor;
     }
 }
